@@ -12,7 +12,7 @@ from surprise.model_selection import train_test_split
 from utils import steam_data, books_data, movie_data
 
 """
-Calling data (steam games, books)
+Calling data (movies, steam games, books)
 """
 
 datanames = ("movie", "steam", "book")
@@ -71,7 +71,7 @@ for name in datanames :
     trainset = traindata.build_full_trainset()
 
 
-    model = SVD()
+    model = SVD(biased = False)
 
     print("============ Dataset : {} fitting ... ============".format(name))
 
