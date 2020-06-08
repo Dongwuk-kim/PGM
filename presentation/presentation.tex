@@ -394,13 +394,20 @@ The parameters must fulfill the following conditions:
 
 \begin{frame}{Data transformation}
     \begin{itemize}
-        \item steam game / book data 변환 과정 설명
+        \item steam game : transform [played time] to [rating] \\
+	      for $\forall i \in \{1,2,3,4,5\},$ rating = i if \\
+	      time < max ( Z(i) , Q(i) ) where Z(i) is the $20 i \%\%$ quantile of unit Gaussian, 
+	      and Q(i) is the quantile of the data distribution.
+	\item books : transform ratings from (0 ~ 10) to (1 ~ 5) \\
+	      original [rating / 11 * 4 + 1], where [ $n$ ] is the rounded integer of $n$.
     \end{itemize}
 \end{frame}
 
 \begin{frame}{Results}
 	\begin{itemize}
 		\item accruacy and results of game/book applications.
+		\item Game MAE : 1.1547 (PMF)
+		\item Book MAE : 1.2293 (PMF)
 	\end{itemize}
 \end{frame}
 
