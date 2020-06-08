@@ -3,6 +3,10 @@ import numpy as np
 from scipy import special
 from ypstruct import structure
 from numpy import linalg as LA
+import json
+#from numba import jit
+
+
 def dg(x) :
     return special.digamma(x)
 
@@ -41,14 +45,7 @@ class BPM_MatrixFactorization :
         self.r_plus_m.data[:] = self.r_plus_m.data - 1
         self.r_minus_m = problem.data_m.copy()
         self.r_minus_m.data[:] =  5- self.r_minus_m.data
-        """
-        self.r_plus_m = problem.data_m.copy()
-        self.r_plus_m.data[:] = (self.R/5)* self.r_plus_m.data
-        self.r_minus_m = problem.data_m.copy()
-        self.r_minus_m.data[:] =  self.R - (self.R/5)*self.r_minus_m.data
-        """
-
-
+ 
     def gen_random_gamma(self) :
         for user in range(self.rows) :
             random_arr = np.random.uniform(0,1,self.latent_k)
@@ -67,7 +64,7 @@ class BPM_MatrixFactorization :
             random_arr_2 = np.where( random_arr_2 <0, 0, random_arr_2 )
             self.eps_plus_m[item,:] = random_arr
             self.eps_minus_m[item,:] = random_arr_2
-
+    
     def update_gamma(self) :
         sum_lambda = np.zeros((self.rows, self.latent_k))
         for idx in range(len(self.data_m.data)) :
@@ -98,7 +95,7 @@ class BPM_MatrixFactorization :
                                                 self.r_minus_m.data[idx] * dg(self.eps_minus_m[i,k])- \
                                                     self.R * dg(self.eps_plus_m[i,k]+self.eps_minus_m[i,k]))
             self.lambda_m[u,i,:] =  self.lambda_m[u,i,:] / np.sum(self.lambda_m[u,i,:])
-
+    
     def update_a_m(self) :
         for user in range(self.rows) :
             self.a_m[user, :] = self.gamma_m[user, :] / np.sum(self.gamma_m[user, :])
@@ -154,9 +151,19 @@ class BPM_MatrixFactorization :
             t +=1
         return t/x
 
+    def cal_rmse(self) :
+        t=0
+        x=0
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
+            x +=1
+            t += (self.q_m[u,i] - self.test_m.data[idx])**2
+        return np.sqrt(t/x)
+
+
 def fit(problem, params) :
     bpm_MatrixFactorization = BPM_MatrixFactorization(problem, params)
-
 
     #initialize gamma
     bpm_MatrixFactorization.gen_random_gamma()
@@ -166,6 +173,11 @@ def fit(problem, params) :
     outputs = structure()
 
     #repeat until maxiteration
+    matrix_norm_list = []
+    cmae_list = []
+    rmse_list = []
+    mae_list = []
+    zero_one_list = []
     for iter in range(problem.maxiter) :
 
         print("{}_iteration computing".format(iter))
@@ -182,9 +194,26 @@ def fit(problem, params) :
         bpm_MatrixFactorization.update_q_m()
 
         if iter != 0 :
-            print("Matrix norm :",LA.norm(pre_q_m - bpm_MatrixFactorization.q_m))
-
+            matrix_norm  = LA.norm(pre_q_m - bpm_MatrixFactorization.q_m)
+            print("Matrix norm :",matrix_norm)
+        else :
+            matrix_norm = -999
+        
+        matrix_norm_list.append(matrix_norm)
+        cmae_list.append(bpm_MatrixFactorization.cal_CMAE())
+        mae_list.append(bpm_MatrixFactorization.cal_MAE())
+        zero_one_list.append(bpm_MatrixFactorization.cal_zero_one_loss())
+        rmse_list.append(bpm_MatrixFactorization.cal_rmse())
         pre_q_m = bpm_MatrixFactorization.q_m.copy()
+
+    summary_dic ={}
+    summary_dic["F_norm"] = matrix_norm_list
+    summary_dic["CMAE"] = cmae_list
+    summary_dic["01_loss"] = zero_one_list
+    summary_dic['RMSE'] = rmse_list
+
+    with open("Beta_{}_k_{}_summary_dic.json".format(params.beta,params.latent_k), "w") as json_file:
+        json.dump(summary_dic, json_file)
 
 
     outputs.a_m = bpm_MatrixFactorization.a_m

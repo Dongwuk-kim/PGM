@@ -5,6 +5,9 @@ from scipy.sparse import coo_matrix
 from collections import Counter
 import BPM_MF_algo
 from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split
+import json
+
 
 
 #Import data
@@ -28,53 +31,54 @@ movieId_arr -= 1
 
 #problem setting
 problem = structure()
-problem.maxiter = 50
+problem.maxiter = 200
 problem.rows = max(userId_arr)+1
 problem.cols = max(movieId_arr)+1
 
+
+X_train, X_test = train_test_split(data_df, test_size=0.2, random_state=42)
+
 #Cross validation setting
-cv = KFold(5, shuffle=True, random_state=0)
+cv = KFold(5, shuffle=True, random_state=42)
 cv_output = []
-for i, (idx_train, idx_test) in enumerate(cv.split(data_df)):
-    temp_list = []
-    print("{}_th cv computing".format(i))
-    df_train = data_df.iloc[idx_train]
-    df_test = data_df.iloc[idx_test]
+for k in range(5) :
+    #rmse
+    for i, (idx_train, idx_validation) in enumerate(cv.split(X_train)):
+        temp_list = []
+        print("{}_th cv computing".format(i))
+        df_train = data_df.iloc[idx_train]
+        df_validation = data_df.iloc[idx_validation]
 
-    userId_tr  = df_train['userId'].values
-    movieId_tr = df_train['movieId'].values
-    rating_tr = df_train['rating'].values
+        userId_tr  = df_train['userId'].values
+        movieId_tr = df_train['movieId'].values
+        rating_tr = df_train['rating'].values
 
-    userId_ts  = df_test['userId'].values
-    movieId_ts = df_test['movieId'].values
-    rating_ts = df_test['rating'].values
+        userId_vd  = df_validation['userId'].values
+        movieId_vd = df_validation['movieId'].values
+        rating_vd = df_validation['rating'].values
 
-    userId_tr -= 1
-    movieId_tr -= 1
+        userId_tr -= 1
+        movieId_tr -= 1
 
-    userId_ts -= 1
-    movieId_ts -= 1
+        userId_vd -= 1
+        movieId_vd -= 1
 
-    sparse_train_m = coo_matrix((rating_tr, (userId_tr, movieId_tr)), \
-                     shape=(problem.rows, problem.cols))
+        sparse_train_m = coo_matrix((rating_tr, (userId_tr, movieId_tr)), \
+                        shape=(problem.rows, problem.cols))
 
-    sparse_test_m = coo_matrix((rating_ts, (userId_ts, movieId_ts)), \
-                     shape=(problem.rows, problem.cols))
+        sparse_validation_m = coo_matrix((rating_vd, (userId_vd, movieId_vd)), \
+                        shape=(problem.rows, problem.cols))
 
+        problem.data_m = sparse_train_m
+        problem.test_m = sparse_validation_m
 
-    problem.data_m = sparse_train_m
-    problem.test_m = sparse_test_m
-
-    #Parameters setting
-    params = structure()
-    params.alpha = 0.2
-    #params.latent_k = 10
-    params.beta = 5
-    params.R = 4
-    params.normal_loc = 0
-    params.normal_var = 0.5
-
-    for k in range(10) :
+        #Parameters setting
+        params = structure()
+        params.alpha = 0.2
+        params.beta = 5
+        params.R = 4
+        params.normal_loc = 0
+        params.normal_var = 0.5
         params.latent_k = 5+k
 
         #run algorithm
@@ -83,6 +87,6 @@ for i, (idx_train, idx_test) in enumerate(cv.split(data_df)):
         print("{}_th latent ".format(k+5), "cv_{}_th CMAE :".format(i), temp_list[k].CMAE)
         print("{}_th latent ".format(k+5), "cv_{}_th 0_1_loss :".format(i), temp_list[k].zero_one_loss)
 
+    #here save 
     cv_output.append(temp_list)
-
-    
+ 
