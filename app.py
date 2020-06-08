@@ -83,10 +83,10 @@ for k in range(5) :
 
         #run algorithm
         temp_list.append(BPM_MF_algo.fit(problem,params))
-        print("{}_th latent ".format(k+5), "cv_{}_th MAE :".format(i), temp_list[k].MAE)
-        print("{}_th latent ".format(k+5), "cv_{}_th CMAE :".format(i), temp_list[k].CMAE)
-        print("{}_th latent ".format(k+5), "cv_{}_th 0_1_loss :".format(i), temp_list[k].zero_one_loss)
+        print("{}_th latent ".format(k+5), "cv_{}_th MAE :".format(i), BPM_MF_algo.MAE)
+        print("{}_th latent ".format(k+5), "cv_{}_th CMAE :".format(i), BPM_MF_algo.CMAE)
+        print("{}_th latent ".format(k+5), "cv_{}_th 0_1_loss :".format(i), BPM_MF_algo.zero_one_loss)
 
     #here save 
-    cv_output.append(temp_list)
+   # cv_output.append(temp_list)
  
