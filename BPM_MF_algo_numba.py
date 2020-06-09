@@ -1,0 +1,337 @@
+import pandas as pd
+import numpy as np
+from scipy import special
+from ypstruct import structure
+from numpy import linalg as LA
+import json
+from numba import jit
+
+@jit(nopython=True)
+def dg(x) :
+    r = 0
+    while (x<=5):
+        r -= 1/x
+        x += 1
+    f = 1/(x * x)
+    t = f *(-1/12.0 + f*(1/120.0 + f*(-1/252.0 + f*(1/240.0 + f*(-1/132.0 \
+        + f*(691/32760.0 + f*(-1/12.0 + f*3617/8160.0)))))))
+    return (r + np.log(x) - 0.5/x + t)
+
+class BPM_MatrixFactorization :
+
+    def __init__(self, problem, params):
+            
+        #Problem information
+        self.data_m = problem.data_m
+        self.rows = problem.rows
+        self.cols = problem.cols
+        self.test_m = problem.test_m
+            
+        #Parmeters
+        self.latent_k = params.latent_k
+        self.alpha = params.alpha
+        self.beta = params.beta
+        self.R = params.R
+        self.normal_loc = params.normal_loc
+        self.normal_var = params.normal_var
+
+        #Initializing
+        #check(frobenus norm . l2 norm, maxeliment )
+        self.gamma_m = np.zeros((self.rows, self.latent_k))
+        self.eps_plus_m = np.zeros((self.cols, self.latent_k))
+        self.eps_minus_m = np.zeros((self.cols, self.latent_k))
+        
+        self.lambda_m = np.zeros((self.rows, self.cols, self.latent_k))
+        self.a_m = np.zeros((self.rows, self.latent_k))
+        self.b_m = np.zeros((self.cols, self.latent_k))
+        self.p_m = np.zeros((self.rows, self.cols))
+        self.q_m = np.zeros((self.rows, self.cols))
+
+        #Calculate r_plus & r_minus matrix        
+        self.r_plus_m = problem.data_m.copy()
+        self.r_plus_m.data[:] = self.r_plus_m.data - 1
+        self.r_minus_m = problem.data_m.copy()
+        self.r_minus_m.data[:] =  5- self.r_minus_m.data
+
+        # to using numba, we split a self.data_m to row, col indices and data.
+        self.data_length = len(self.data_m.row)
+        self.data_row_coordinate = self.data_m.row
+        self.data_col_coordinate = self.data_m.col 
+
+        self.r_plus_length = len(self.r_plus_m.row)
+        self.r_plus_row_coordinate = self.r_plus_m.row
+        self.r_plus_col_coordinate = self.r_plus_m.col
+        self.r_plus_value = self.r_plus_m.data.copy()
+
+        self.r_minus_length = len(self.r_minus_m.row)
+        self.r_minus_row_coordinate = self.r_minus_m.row
+        self.r_minus_col_coordinate = self.r_minus_m.col
+        self.r_minus_value = self.r_minus_m.data.copy()
+
+    def gen_random_gamma(self) :
+        for user in range(self.rows) :
+            random_arr = np.random.uniform(0,1,self.latent_k)
+            random_arr /= np.sum(random_arr)
+            self.gamma_m[user,:] = random_arr
+
+    def gen_random_epslion(self) :
+        for item in range(self.cols) :
+            random_arr = np.random.normal(self.normal_loc,self.normal_var,self.latent_k)
+            random_arr_2 = np.random.normal(self.normal_loc,self.normal_var,self.latent_k)
+
+            random_arr += self.beta
+            random_arr_2 += self.beta
+
+            random_arr = np.where( random_arr <0, 0, random_arr )
+            random_arr_2 = np.where( random_arr_2 <0, 0, random_arr_2 )
+            self.eps_plus_m[item,:] = random_arr
+            self.eps_minus_m[item,:] = random_arr_2
+
+    # use numba! 
+    @staticmethod
+    @jit(nopython=True) 
+    def update_gamma(rows, latent_k, data_length, row_coordinate, col_coordinate,\
+                     lambda_m, alpha) :
+        sum_lambda = np.zeros((rows, latent_k))
+        for idx in range(data_length) :
+            u = row_coordinate[idx]
+            i = col_coordinate[idx]
+            for k in range(latent_k) :
+                sum_lambda[u,k] += lambda_m[u, i, k]
+        gamma_m = alpha + sum_lambda
+        return gamma_m
+
+    @staticmethod
+    @jit(nopython=True) 
+    def update_epsilon(cols, latent_k, data_length, row_coordinate, col_coordinate,\
+                       lambda_m, r_plus_value, r_minus_value, beta):
+        sum_lambda_mul_r_plus = np.zeros((cols, latent_k))
+        sum_lambda_mul_r_minus = np.zeros((cols, latent_k))
+        for idx in range(data_length) :
+            u = row_coordinate[idx]
+            i = col_coordinate[idx]
+            for k in range(latent_k) :
+                sum_lambda_mul_r_plus[i,k] += lambda_m[u, i, k]*r_plus_value[idx]
+                sum_lambda_mul_r_minus[i,k] += lambda_m[u, i, k]*r_minus_value[idx]
+        eps_plus_m = beta + sum_lambda_mul_r_plus
+        eps_minus_m = beta + sum_lambda_mul_r_minus
+        return (eps_plus_m, eps_minus_m)
+
+    @staticmethod
+    @jit(nopython=True) 
+    def update_lambda(rows, cols, latent_k, data_length, row_coordinate, col_coordinate, R,\
+                      gamma_m, eps_plus_m, eps_minus_m, r_plus_value, r_minus_value):
+        lambda_m = np.zeros((rows, cols, latent_k))
+        for idx in range(data_length) :
+            u = row_coordinate[idx]
+            i = col_coordinate[idx]
+            for k in range(latent_k):
+                lambda_m[u,i,k] = np.exp(dg(gamma_m[u,k]) + r_plus_value[idx] * dg(eps_plus_m[i,k]) + \
+                                                r_minus_value[idx] * dg(eps_minus_m[i,k])- \
+                                                    R * dg(eps_plus_m[i,k]+eps_minus_m[i,k]))
+            lambda_m[u,i,:] =  lambda_m[u,i,:] / np.sum(lambda_m[u,i,:])
+        return lambda_m
+
+    ''' original code 
+    def update_gamma(self) :
+        sum_lambda = np.zeros((self.rows, self.latent_k))
+        for idx in range(len(self.data_m.data)) :
+            u = self.data_m.row[idx]
+            i = self.data_m.col[idx]
+            for k in range(self.latent_k) :
+                sum_lambda[u,k] += self.lambda_m[u, i, k]
+        self.gamma_m = self.alpha + sum_lambda
+
+    def update_epslion(self):
+        sum_lambda_mul_r_plus = np.zeros((self.cols, self.latent_k))
+        sum_lambda_mul_r_minus = np.zeros((self.cols, self.latent_k))
+        for idx in range(len(self.data_m.data)) :
+            u = self.data_m.row[idx]
+            i = self.data_m.col[idx]
+            for k in range(self.latent_k) :
+                sum_lambda_mul_r_plus[i,k] += self.lambda_m[u, i, k]*self.r_plus_m.data[idx]
+                sum_lambda_mul_r_minus[i,k] += self.lambda_m[u, i, k]*self.r_minus_m.data[idx]
+        self.eps_plus_m = self.beta + sum_lambda_mul_r_plus
+        self.eps_minus_m = self.beta + sum_lambda_mul_r_minus
+
+    def update_lambda(self):
+        for idx in range(len(self.data_m.data)) :
+        u = self.data_m.row[idx]
+        i = self.data_m.col[idx]
+        for k in range(self.latent_k):
+            self.lambda_m[u,i,k] = np.exp(dg(self.gamma_m[u,k]) + self.r_plus_m.data[idx] * dg(self.eps_plus_m[i,k]) + \
+                                            self.r_minus_m.data[idx] * dg(self.eps_minus_m[i,k])- \
+                                                self.R * dg(self.eps_plus_m[i,k]+self.eps_minus_m[i,k]))
+        self.lambda_m[u,i,:] =  self.lambda_m[u,i,:] / np.sum(self.lambda_m[u,i,:])
+    '''
+
+    def update_a_m(self) :
+        for user in range(self.rows) :
+            self.a_m[user, :] = self.gamma_m[user, :] / np.sum(self.gamma_m[user, :])
+    
+    def update_b_m(self) :
+        for item in range(self.cols) :
+            self.b_m[item, :] = self.eps_plus_m[item, :] / (self.eps_minus_m[item, :] + self.eps_plus_m[item, :])
+
+    def update_p_m(self) :
+        # editted: 05/26, minwoo
+        self.p_m[:, :] = np.einsum("uk,ik->ui", self.a_m, self.b_m)
+
+    def update_q_m(self) : 
+        # editted: 05/26, minwoo
+        self.q_m[:, :] = np.ceil(self.p_m * 5)
+
+    def cal_MAE(self) :
+        t=0
+        x=0
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
+            t += np.abs(self.q_m[u,i] - self.test_m.data[idx])
+            x += 1
+        return t/x
+    
+    def cal_CMAE(self) :
+        t=0
+        x=0
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
+            if self.test_m.data[idx] < 4 or self.q_m[u,i] < 4 :
+                continue
+            x += 1
+            t += np.abs(self.q_m[u,i] - self.test_m.data[idx])
+        if x == 0 :
+            return ("no_case")
+
+        return t/x
+
+    def cal_zero_one_loss(self) :
+        t=0
+        x=0
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
+            x +=1
+            if self.test_m.data[idx] < 4 and self.q_m[u,i] < 4 :
+                continue
+            if self.test_m.data[idx] >= 4 and self.q_m[u,i] >= 4 :
+                continue
+            t +=1
+        return t/x
+
+    def cal_rmse(self) :
+        t=0
+        x=0
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
+            x +=1
+            t += (self.q_m[u,i] - self.test_m.data[idx])**2
+        return np.sqrt(t/x)
+
+
+def fit(problem, params) :
+    bpm_MatrixFactorization = BPM_MatrixFactorization(problem, params)
+
+    # input parameters
+    alpha = bpm_MatrixFactorization.alpha
+    beta = bpm_MatrixFactorization.beta
+    rows = bpm_MatrixFactorization.rows
+    cols = bpm_MatrixFactorization.cols
+    latent_k = bpm_MatrixFactorization.latent_k
+    row_coordinate = bpm_MatrixFactorization.data_row_coordinate
+    col_coordinate = bpm_MatrixFactorization.data_col_coordinate
+    data_length = bpm_MatrixFactorization.data_length
+    R = bpm_MatrixFactorization.R
+    r_plus_value = bpm_MatrixFactorization.r_plus_value
+    r_minus_value = bpm_MatrixFactorization.r_minus_value
+
+    #initialize gamma
+    bpm_MatrixFactorization.gen_random_gamma()
+    bpm_MatrixFactorization.gen_random_epslion()
+
+    #define output
+    outputs = structure()
+
+    #repeat until maxiteration
+    matrix_norm_list = []
+    cmae_list = []
+    rmse_list = []
+    mae_list = []
+    zero_one_list = []
+    for iter in range(problem.maxiter) :
+
+        print("{}_iteration computing".format(iter))
+        
+        # variables for lambda update
+        gamma_m = bpm_MatrixFactorization.gamma_m.copy()   
+        eps_plus_m = bpm_MatrixFactorization.eps_plus_m.copy()
+        eps_minus_m = bpm_MatrixFactorization.eps_minus_m.copy()
+
+        # update lambda
+        bpm_MatrixFactorization.lambda_m[:] = \
+        bpm_MatrixFactorization.update_lambda(rows, cols, latent_k, data_length,\
+            row_coordinate, col_coordinate, R, \
+            gamma_m, eps_plus_m, eps_minus_m, r_plus_value, r_minus_value)
+
+        lambda_m = bpm_MatrixFactorization.lambda_m 
+        
+        # update gamma
+        bpm_MatrixFactorization.gamma_m[:] = \
+        bpm_MatrixFactorization.update_gamma(rows, latent_k, data_length, \
+                row_coordinate, col_coordinate, lambda_m, alpha)
+
+        #update epsilon
+        bpm_MatrixFactorization.update_epsilon(cols, latent_k, data_length, \
+                row_coordinate, col_coordinate, lambda_m, r_plus_value, r_minus_value, beta)
+
+        #update a & b matrix
+        bpm_MatrixFactorization.update_a_m()
+        bpm_MatrixFactorization.update_b_m()
+
+        #update p & q matrix
+        bpm_MatrixFactorization.update_p_m()
+        bpm_MatrixFactorization.update_q_m()
+
+        if iter != 0 :
+            matrix_norm  = LA.norm(pre_q_m - bpm_MatrixFactorization.q_m)
+            print("Matrix norm :",matrix_norm)
+        else :
+            matrix_norm = -999
+        
+        matrix_norm_list.append(matrix_norm)
+        cmae_list.append(bpm_MatrixFactorization.cal_CMAE())
+        mae_list.append(bpm_MatrixFactorization.cal_MAE())
+        zero_one_list.append(bpm_MatrixFactorization.cal_zero_one_loss())
+        rmse_list.append(bpm_MatrixFactorization.cal_rmse())
+        pre_q_m = bpm_MatrixFactorization.q_m.copy()
+
+    summary_dic ={}
+    summary_dic["F_norm"] = matrix_norm_list
+    summary_dic["CMAE"] = cmae_list
+    summary_dic["01_loss"] = zero_one_list
+    summary_dic['RMSE'] = rmse_list
+
+    # with open("Beta_{}_k_{}_summary_dic.json".format(params.beta,params.latent_k), "w") as json_file:
+    #    json.dump(summary_dic, json_file)
+
+
+    outputs.a_m = bpm_MatrixFactorization.a_m
+    outputs.b_m = bpm_MatrixFactorization.b_m
+    outputs.lambda_m = bpm_MatrixFactorization.lambda_m
+    outputs.gamma_m = bpm_MatrixFactorization.gamma_m
+    outputs.p_m = bpm_MatrixFactorization.p_m  # added
+    outputs.q_m = bpm_MatrixFactorization.q_m  # added
+    outputs.MAE = bpm_MatrixFactorization.cal_MAE()
+    outputs.CMAE = bpm_MatrixFactorization.cal_CMAE()
+    outputs.zero_one_loss = bpm_MatrixFactorization.cal_zero_one_loss()
+    outputs.params = params
+
+    return outputs
+
+    
+
+
+
+
