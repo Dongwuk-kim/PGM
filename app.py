@@ -31,7 +31,7 @@ movieId_arr -= 1
 
 #problem setting
 problem = structure()
-problem.maxiter = 200
+problem.maxiter = 5
 problem.rows = max(userId_arr)+1
 problem.cols = max(movieId_arr)+1
 
@@ -43,8 +43,8 @@ cv = KFold(5, shuffle=True, random_state=42)
 cv_output = []
 for k in range(5) :
     #rmse
+    temp_list = []
     for i, (idx_train, idx_validation) in enumerate(cv.split(X_train)):
-        temp_list = []
         print("{}_th cv computing".format(i))
         df_train = data_df.iloc[idx_train]
         df_validation = data_df.iloc[idx_validation]
@@ -83,9 +83,9 @@ for k in range(5) :
 
         #run algorithm
         temp_list.append(BPM_MF_algo.fit(problem,params))
-        print("{}_th latent ".format(k+5), "cv_{}_th MAE :".format(i), BPM_MF_algo.MAE)
-        print("{}_th latent ".format(k+5), "cv_{}_th CMAE :".format(i), BPM_MF_algo.CMAE)
-        print("{}_th latent ".format(k+5), "cv_{}_th 0_1_loss :".format(i), BPM_MF_algo.zero_one_loss)
+        print("{}_th latent ".format(k+5), "cv_{}_th MAE :".format(i), temp_list[i].MAE)
+        print("{}_th latent ".format(k+5), "cv_{}_th CMAE :".format(i), temp_list[i].CMAE)
+        print("{}_th latent ".format(k+5), "cv_{}_th 0_1_loss :".format(i), temp_list[i].zero_one_loss)
 
     #here save 
    # cv_output.append(temp_list)

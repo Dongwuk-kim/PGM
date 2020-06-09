@@ -4,11 +4,23 @@ from scipy import special
 from ypstruct import structure
 from numpy import linalg as LA
 import json
+import numba
 #from numba import jit
 
-
+@numba.jit(nopython=True)
+def dg(x):
+    r = 0
+    while x<=5:
+        r -= 1/x
+        x += 1
+    f = 1/(x*x)
+    t = f*(-1/12.0 + f*(1/120.0 + f*(-1/252.0 + f*(1/240.0 + f*(-1/132.0
+        + f*(691/32760.0 + f*(-1/12.0 + f*3617/8160.0)))))))
+    return r + np.log(x) - 0.5/x + t
+"""
 def dg(x) :
     return special.digamma(x)
+"""
 
 class BPM_MatrixFactorization :
 
@@ -197,7 +209,7 @@ def fit(problem, params) :
             matrix_norm  = LA.norm(pre_q_m - bpm_MatrixFactorization.q_m)
             print("Matrix norm :",matrix_norm)
         else :
-            matrix_norm = -999
+            matrix_norm = 999
         
         matrix_norm_list.append(matrix_norm)
         cmae_list.append(bpm_MatrixFactorization.cal_CMAE())
@@ -205,6 +217,9 @@ def fit(problem, params) :
         zero_one_list.append(bpm_MatrixFactorization.cal_zero_one_loss())
         rmse_list.append(bpm_MatrixFactorization.cal_rmse())
         pre_q_m = bpm_MatrixFactorization.q_m.copy()
+
+        if matrix_norm < 1 :
+            break
 
     summary_dic ={}
     summary_dic["F_norm"] = matrix_norm_list
