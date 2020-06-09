@@ -31,7 +31,7 @@ movieId_arr -= 1
 
 #problem setting
 problem = structure()
-problem.maxiter = 5
+problem.maxiter = 250
 problem.rows = max(userId_arr)+1
 problem.cols = max(movieId_arr)+1
 
@@ -85,8 +85,8 @@ for k in range(5) :
         temp_list.append(BPM_MF_algo.fit(problem,params))
 
         #print result
-        print("{}_th latent ".format(k+5), "cv_{}_th MAE :".format(i), temp_list[i].MAE)
-        print("{}_th latent ".format(k+5), "cv_{}_th CMAE :".format(i), temp_list[i].CMAE)
-        print("{}_th latent ".format(k+5), "cv_{}_th 0_1_loss :".format(i), temp_list[i].zero_one_loss)
+        print("{}_th latent ".format(params.latent_k), "cv_{}_th MAE :".format(i), temp_list[i].MAE)
+        print("{}_th latent ".format(params.latent_k), "cv_{}_th CMAE :".format(i), temp_list[i].CMAE)
+        print("{}_th latent ".format(params.latent_k), "cv_{}_th 0_1_loss :".format(i), temp_list[i].zero_one_loss)
 
  
