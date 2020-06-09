@@ -79,14 +79,14 @@ for k in range(5) :
         params.R = 4
         params.normal_loc = 0
         params.normal_var = 0.5
-        params.latent_k = 5+k
+        params.latent_k = 5*(k+1)
 
         #run algorithm
         temp_list.append(BPM_MF_algo.fit(problem,params))
+
+        #print result
         print("{}_th latent ".format(k+5), "cv_{}_th MAE :".format(i), temp_list[i].MAE)
         print("{}_th latent ".format(k+5), "cv_{}_th CMAE :".format(i), temp_list[i].CMAE)
         print("{}_th latent ".format(k+5), "cv_{}_th 0_1_loss :".format(i), temp_list[i].zero_one_loss)
 
-    #here save 
-   # cv_output.append(temp_list)
  
