@@ -4,6 +4,7 @@ from ypstruct import structure
 from scipy.sparse import coo_matrix
 from collections import Counter
 import BPM_MF_algo
+import BPM_MF_algo_numba_class
 from sklearn.model_selection import KFold
 from sklearn.model_selection import train_test_split
 import json
@@ -82,7 +83,7 @@ for k in range(5) :
         params.latent_k = 5*(k+1)
 
         #run algorithm
-        temp_list.append(BPM_MF_algo.fit(problem,params))
+        temp_list.append(BPM_MF_algo_numba_class.fit(problem,params))
 
         #print result
         print("{}_th latent ".format(params.latent_k), "cv_{}_th MAE :".format(i), temp_list[i].MAE)
