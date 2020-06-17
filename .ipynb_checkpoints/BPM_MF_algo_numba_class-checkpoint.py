@@ -6,14 +6,14 @@ from numpy import linalg as LA
 import json
 from numba.experimental import jitclass
 from numba import jit
-from numba import double, int32, float32
+from numba import double, int32, float32, int64
 #from numba import jit
 
 
 spec = [
     ('data_u', int32[:]),
     ('data_i', int32[:]),  
-    ('data_v', float32[:]),             
+    ('data_v', int64[:]),             
     ('rows', int32),
     ('cols', int32),
     ('test_u', int32[:]),
@@ -82,14 +82,16 @@ class BPM_MatrixFactorization :
         self.p_m = np.zeros((self.rows, self.cols), dtype=np.float32)
         self.q_m = np.zeros((self.rows, self.cols), dtype=np.float32)
         
-        self.r_plus_v = np.zeros()
-
+        '''
+        self.r_plus_v = np.zeros(len(self.data_v), dtype=np.float32)
+        self.r_minus_v = np.zeros(len(self.data_v), dtype=np.float32)
+        '''
         #Calculate r_plus & r_minus matrix        
         self.r_plus_v = self.data_v.copy()
         self.r_plus_v = self.r_plus_v - 1
 
         self.r_minus_v = self.data_v.copy()
-        self.r_minus_v =  5-self.r_minus_v
+        self.r_minus_v = 5 - self.r_minus_v
  
     def gen_random_gamma(self) :
         for user in range(self.rows) :
