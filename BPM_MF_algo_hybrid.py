@@ -256,6 +256,7 @@ def fit(problem, params) :
     summary_dic["CMAE"] = cmae_list
     summary_dic["01_loss"] = zero_one_list
     summary_dic['RMSE'] = rmse_list
+    summary_dic['MAE'] = rmse_list
 
     with open("Beta_{}_k_{}_summary_dic.json".format(params.beta,params.latent_k), "w") as json_file:
         json.dump(summary_dic, json_file)
