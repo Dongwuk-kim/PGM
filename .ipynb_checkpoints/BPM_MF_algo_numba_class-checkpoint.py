@@ -6,7 +6,7 @@ from numpy import linalg as LA
 import json
 from numba.experimental import jitclass
 from numba import jit
-from numba import double, int32, float32. int64
+from numba import double, int32, float32
 #from numba import jit
 
 
