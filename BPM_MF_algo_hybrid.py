@@ -270,6 +270,7 @@ def fit(problem, params) :
     outputs.q_m = bpm_MatrixFactorization.q_m  # added
     outputs.MAE = bpm_MatrixFactorization.cal_MAE()
     outputs.CMAE = bpm_MatrixFactorization.cal_CMAE()
+    outputs.RMSE = bpm_MatrixFactorization.cal_rmse()
     outputs.zero_one_loss = bpm_MatrixFactorization.cal_zero_one_loss()
     outputs.params = params
 
