@@ -43,6 +43,7 @@ X_train, X_test = train_test_split(data_df, test_size=0.2, random_state=42)
 cv = KFold(5, shuffle=True, random_state=42)
 cv_output = []
 for k in range(5) :
+
     #rmse
     temp_list = []
     for i, (idx_train, idx_validation) in enumerate(cv.split(X_train)):
