@@ -91,5 +91,6 @@ for k in range(5) :
         print("{}_th latent ".format(params.latent_k), "cv_{}_th MAE :".format(i), temp_list[i].MAE)
         print("{}_th latent ".format(params.latent_k), "cv_{}_th CMAE :".format(i), temp_list[i].CMAE)
         print("{}_th latent ".format(params.latent_k), "cv_{}_th 0_1_loss :".format(i), temp_list[i].zero_one_loss)
+        print("{}_th latent ".format(params.latent_k), "test_th RMSE :", bpm.RMSE)
 
  
