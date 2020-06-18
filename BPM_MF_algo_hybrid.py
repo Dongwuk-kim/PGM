@@ -25,7 +25,9 @@ def dg(x) :
 class BPM_MatrixFactorization :
 
     def __init__(self, problem, params):
-            
+        #set result directory
+        self.dir = problem.dir
+        
         #Problem information
         self.data_m = problem.data_m
         self.rows = problem.rows
@@ -210,6 +212,7 @@ def fit(problem, params) :
 
 
 
+
     for iter in range(problem.maxiter) :
 
         print("{}_iteration computing".format(iter))
@@ -222,7 +225,7 @@ def fit(problem, params) :
 
         temp_m = bpm_MatrixFactorization.update_lambda(rows, cols, latent_k, data_row, data_col, R, \
                     gamma_m, eps_plus_m, eps_minus_m, r_plus_m, r_minus_m)
-
+        
         bpm_MatrixFactorization.get_lambda_m(temp_m)
         bpm_MatrixFactorization.update_gamma()
         bpm_MatrixFactorization.update_epslion()
@@ -258,7 +261,7 @@ def fit(problem, params) :
     summary_dic['RMSE'] = rmse_list
     summary_dic['MAE'] = mae_list
 
-    with open("Beta_{}_k_{}_summary_dic.json".format(params.beta,params.latent_k), "w") as json_file:
+    with open(problem.dir + "Beta_{}_k_{}_summary_dic.json".format(params.beta,params.latent_k), "w") as json_file:
         json.dump(summary_dic, json_file)
 
 
@@ -270,6 +273,8 @@ def fit(problem, params) :
     outputs.q_m = bpm_MatrixFactorization.q_m  # added
     outputs.MAE = bpm_MatrixFactorization.cal_MAE()
     outputs.CMAE = bpm_MatrixFactorization.cal_CMAE()
+    outputs.RMSE = bpm_MatrixFactorization.cal_rmse()
+
     outputs.zero_one_loss = bpm_MatrixFactorization.cal_zero_one_loss()
     outputs.params = params
 

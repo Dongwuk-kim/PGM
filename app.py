@@ -35,6 +35,7 @@ problem = structure()
 problem.maxiter = 250
 problem.rows = max(userId_arr)+1
 problem.cols = max(movieId_arr)+1
+prablem.dir = 'train_result/'
 
 
 X_train, X_test = train_test_split(data_df, test_size=0.2, random_state=42)
@@ -58,7 +59,7 @@ for k in range(5) :
         userId_vd  = df_validation['userId'].values
         movieId_vd = df_validation['movieId'].values
         rating_vd = df_validation['rating'].values
-
+        
         userId_tr -= 1
         movieId_tr -= 1
 
