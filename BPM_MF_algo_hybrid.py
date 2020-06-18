@@ -4,40 +4,10 @@ from scipy import special
 from ypstruct import structure
 from numpy import linalg as LA
 import json
-from numba.experimental import jitclass
+import numba
 from numba import jit
-from numba import double, int32, float32, int64
-#from numba import jit
 
-
-spec = [
-    ('data_u', int32[:]),
-    ('data_i', int32[:]),  
-    ('data_v', int64[:]),             
-    ('rows', int32),
-    ('cols', int32),
-    ('test_u', int32[:]),
-    ('test_i', int32[:]),
-    ('test_v', float32[:]),
-    ('latent_k', int32),
-    ('alpha', float32),
-    ('beta', float32),
-    ('R', int32),
-    ('normal_loc', float32),
-    ('normal_var', float32),
-    ('gamma_m', float32[:,:]),
-    ('eps_plus_m', float32[:,:]),
-    ('eps_minus_m', float32[:,:]),
-    ('lambda_m', float32[:,:]),
-    ('a_m', float32[:,:]),
-    ('b_m', float32[:,:]),
-    ('p_m', float32[:,:]),
-    ('q_m', float32[:,:]),
-    ('r_plus_v', float32[:,:]),
-    ('r_minus_v', float32[:,:])
-]
-
-@jit(nopython=True, fastmath=True)
+@numba.jit(nopython=True)
 def dg(x):
     r = 0
     while x<=5:
@@ -47,22 +17,21 @@ def dg(x):
     t = f*(-1/12.0 + f*(1/120.0 + f*(-1/252.0 + f*(1/240.0 + f*(-1/132.0
         + f*(691/32760.0 + f*(-1/12.0 + f*3617/8160.0)))))))
     return r + np.log(x) - 0.5/x + t
+"""
+def dg(x) :
+    return special.digamma(x)
+"""
 
-@jitclass(spec)
 class BPM_MatrixFactorization :
-    def __init__(self, problem, params):
-        #Problem information
-        self.data_u = problem.data_m.row
-        self.data_i = problem.data_m.col
-        self.data_v = problem.data_m.data
 
-        self.test_u = problem.test_m.row
-        self.test_i = problem.test_m.col
-        self.test_v = problem.test_m.data
-        
+    def __init__(self, problem, params):
+            
+        #Problem information
+        self.data_m = problem.data_m
         self.rows = problem.rows
         self.cols = problem.cols
-
+        self.test_m = problem.test_m
+            
         #Parmeters
         self.latent_k = params.latent_k
         self.alpha = params.alpha
@@ -72,33 +41,29 @@ class BPM_MatrixFactorization :
         self.normal_var = params.normal_var
 
         #Initializing
-        self.gamma_m = np.zeros((self.rows, self.latent_k), dtype=np.float32)
-        self.eps_plus_m = np.zeros((self.cols, self.latent_k), dtype=np.float32)
-        self.eps_minus_m = np.zeros((self.cols, self.latent_k), dtype=np.float32)
+        #check(frobenus norm . l2 norm, maxeliment )
+        self.gamma_m = np.zeros((self.rows, self.latent_k))
+        self.eps_plus_m = np.zeros((self.cols, self.latent_k))
+        self.eps_minus_m = np.zeros((self.cols, self.latent_k))
         
-        self.lambda_m = np.zeros((self.rows, self.cols, self.latent_k), dtype=np.float32)
-        self.a_m = np.zeros((self.rows, self.latent_k), dtype=np.float32)
-        self.b_m = np.zeros((self.cols, self.latent_k), dtype=np.float32)
-        self.p_m = np.zeros((self.rows, self.cols), dtype=np.float32)
-        self.q_m = np.zeros((self.rows, self.cols), dtype=np.float32)
-        
-        '''
-        self.r_plus_v = np.zeros(len(self.data_v), dtype=np.float32)
-        self.r_minus_v = np.zeros(len(self.data_v), dtype=np.float32)
-        '''
-        #Calculate r_plus & r_minus matrix        
-        self.r_plus_v = self.data_v.copy()
-        self.r_plus_v = self.r_plus_v - 1
+        self.lambda_m = np.zeros((self.rows, self.cols, self.latent_k))
+        self.a_m = np.zeros((self.rows, self.latent_k))
+        self.b_m = np.zeros((self.cols, self.latent_k))
+        self.p_m = np.zeros((self.rows, self.cols))
+        self.q_m = np.zeros((self.rows, self.cols))
 
-        self.r_minus_v = self.data_v.copy()
-        self.r_minus_v = 5 - self.r_minus_v
+        #Calculate r_plus & r_minus matrix        
+        self.r_plus_m = problem.data_m.copy()
+        self.r_plus_m.data[:] = self.r_plus_m.data - 1
+        self.r_minus_m = problem.data_m.copy()
+        self.r_minus_m.data[:] =  5- self.r_minus_m.data
  
     def gen_random_gamma(self) :
         for user in range(self.rows) :
             random_arr = np.random.uniform(0,1,self.latent_k)
             random_arr /= np.sum(random_arr)
             self.gamma_m[user,:] = random_arr
-    
+
     def gen_random_epslion(self) :
         for item in range(self.cols) :
             random_arr = np.random.normal(self.normal_loc,self.normal_var,self.latent_k)
@@ -114,9 +79,9 @@ class BPM_MatrixFactorization :
     
     def update_gamma(self) :
         sum_lambda = np.zeros((self.rows, self.latent_k))
-        for idx in range(len(self.data_v)) :
-            u = self.data_u[idx]
-            i = self.data_i[idx]
+        for idx in range(len(self.data_m.data)) :
+            u = self.data_m.row[idx]
+            i = self.data_m.col[idx]
             for k in range(self.latent_k) :
                 sum_lambda[u,k] += self.lambda_m[u, i, k]
         self.gamma_m = self.alpha + sum_lambda
@@ -124,24 +89,29 @@ class BPM_MatrixFactorization :
     def update_epslion(self):
         sum_lambda_mul_r_plus = np.zeros((self.cols, self.latent_k))
         sum_lambda_mul_r_minus = np.zeros((self.cols, self.latent_k))
-        for idx in range(len(self.data_v)) :
-            u = self.data_u[idx]
-            i = self.data_i[idx]
+        for idx in range(len(self.data_m.data)) :
+            u = self.data_m.row[idx]
+            i = self.data_m.col[idx]
             for k in range(self.latent_k) :
-                sum_lambda_mul_r_plus[i,k] += self.lambda_m[u, i, k]*self.r_plus_v[idx]
-                sum_lambda_mul_r_minus[i,k] += self.lambda_m[u, i, k]*self.r_minus_v[idx]
+                sum_lambda_mul_r_plus[i,k] += self.lambda_m[u, i, k]*self.r_plus_m.data[idx]
+                sum_lambda_mul_r_minus[i,k] += self.lambda_m[u, i, k]*self.r_minus_m.data[idx]
         self.eps_plus_m = self.beta + sum_lambda_mul_r_plus
         self.eps_minus_m = self.beta + sum_lambda_mul_r_minus
-
-    def update_lambda(self):
-        for idx in range(len(self.data_v)) :
-            u = self.data_u[idx]
-            i = self.data_i[idx]
-            for k in range(self.latent_k):
-                self.lambda_m[u,i,k] = np.exp(dg(self.gamma_m[u,k]) + self.r_plus_v[idx] * dg(self.eps_plus_m[i,k]) + \
-                                                self.r_minus_v[idx] * dg(self.eps_minus_m[i,k])- \
-                                                    self.R * dg(self.eps_plus_m[i,k]+self.eps_minus_m[i,k]))
-            self.lambda_m[u,i,:] =  self.lambda_m[u,i,:] / np.sum(self.lambda_m[u,i,:])
+    
+    @staticmethod
+    @jit(nopython=True) 
+    def update_lambda(rows, cols, latent_k, row_coordinate, col_coordinate, R,\
+                      gamma_m, eps_plus_m, eps_minus_m, r_plus_value, r_minus_value):
+        lambda_m = np.zeros((rows, cols, latent_k))
+        for idx in range(len(row_coordinate)) :
+            u = row_coordinate[idx]
+            i = col_coordinate[idx]
+            for k in range(latent_k):
+                lambda_m[u,i,k] = np.exp(dg(gamma_m[u,k]) + r_plus_value[idx] * dg(eps_plus_m[i,k]) + \
+                                                r_minus_value[idx] * dg(eps_minus_m[i,k])- \
+                                                    R * dg(eps_plus_m[i,k]+eps_minus_m[i,k]))
+            lambda_m[u,i,:] =  lambda_m[u,i,:] / np.sum(lambda_m[u,i,:])
+        return lambda_m
     
     def update_a_m(self) :
         for user in range(self.rows) :
@@ -152,34 +122,33 @@ class BPM_MatrixFactorization :
             self.b_m[item, :] = self.eps_plus_m[item, :] / (self.eps_minus_m[item, :] + self.eps_plus_m[item, :])
 
     def update_p_m(self) :
-        for u in range(self.rows):
-            for i in range(self.cols):
-                for k in range(self.latent_k):
-                    self.p_m[u, i] += self.a_m[u, k] + self.b_m[i, k]
+        # editted: 05/26, minwoo
+        self.p_m[:, :] = np.einsum("uk,ik->ui", self.a_m, self.b_m)
 
     def update_q_m(self) : 
+        # editted: 05/26, minwoo
         self.q_m[:, :] = np.ceil(self.p_m * 5)
 
     def cal_MAE(self) :
         t=0
         x=0
-        for idx in range(len(self.test_v)):
-            u = self.test_u[idx]
-            i = self.test_i[idx]
-            t += np.abs(self.q_m[u,i] - self.test_v[idx])
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
+            t += np.abs(self.q_m[u,i] - self.test_m.data[idx])
             x += 1
         return t/x
     
     def cal_CMAE(self) :
         t=0
         x=0
-        for idx in range(len(self.test_v)):
-            u = self.test_u[idx]
-            i = self.test_i[idx]
-            if self.test_v[idx] < 4 or self.q_m[u,i] < 4 :
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
+            if self.test_m.data[idx] < 4 or self.q_m[u,i] < 4 :
                 continue
             x += 1
-            t += np.abs(self.q_m[u,i] - self.test_v[idx])
+            t += np.abs(self.q_m[u,i] - self.test_m.data[idx])
         if x == 0 :
             return ("no_case")
 
@@ -188,13 +157,13 @@ class BPM_MatrixFactorization :
     def cal_zero_one_loss(self) :
         t=0
         x=0
-        for idx in range(len(self.test_v)):
-            u = self.test_u[idx]
-            i = self.test_i[idx]
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
             x +=1
-            if self.test_v[idx] < 4 and self.q_m[u,i] < 4 :
+            if self.test_m.data[idx] < 4 and self.q_m[u,i] < 4 :
                 continue
-            if self.test_v[idx] >= 4 and self.q_m[u,i] >= 4 :
+            if self.test_m.data[idx] >= 4 and self.q_m[u,i] >= 4 :
                 continue
             t +=1
         return t/x
@@ -202,13 +171,15 @@ class BPM_MatrixFactorization :
     def cal_rmse(self) :
         t=0
         x=0
-        for idx in range(len(self.test_v)):
-            u = self.test_u[idx]
-            i = self.test_i[idx]
+        for idx in range(len(self.test_m.data)):
+            u = self.test_m.row[idx]
+            i = self.test_m.col[idx]
             x +=1
-            t += (self.q_m[u,i] - self.test_v[idx])**2
+            t += (self.q_m[u,i] - self.test_m.data[idx])**2
         return np.sqrt(t/x)
-    
+
+    def get_lambda_m(self, lambda_m) :
+        self.lambda_m = lambda_m
 
 
 def fit(problem, params) :
@@ -227,10 +198,32 @@ def fit(problem, params) :
     rmse_list = []
     mae_list = []
     zero_one_list = []
+
+
+    #undo wrap up variable for numba
+    rows = problem.rows
+    cols = problem.cols
+    latent_k = params.latent_k
+    data_row = problem.data_m.row
+    data_col = problem.data_m.col
+    R = params.R
+
+
+
     for iter in range(problem.maxiter) :
 
         print("{}_iteration computing".format(iter))
-        bpm_MatrixFactorization.update_lambda()
+        #bpm_MatrixFactorization.update_lambda()
+        gamma_m = bpm_MatrixFactorization.gamma_m
+        eps_plus_m = bpm_MatrixFactorization.eps_plus_m
+        eps_minus_m = bpm_MatrixFactorization.eps_minus_m
+        r_plus_m = bpm_MatrixFactorization.r_plus_m.data
+        r_minus_m = bpm_MatrixFactorization.r_minus_m.data
+
+        temp_m = bpm_MatrixFactorization.update_lambda(rows, cols, latent_k, data_row, data_col, R, \
+                    gamma_m, eps_plus_m, eps_minus_m, r_plus_m, r_minus_m)
+
+        bpm_MatrixFactorization.get_lambda_m(temp_m)
         bpm_MatrixFactorization.update_gamma()
         bpm_MatrixFactorization.update_epslion()
 
@@ -263,12 +256,11 @@ def fit(problem, params) :
     summary_dic["CMAE"] = cmae_list
     summary_dic["01_loss"] = zero_one_list
     summary_dic['RMSE'] = rmse_list
-    
-    '''
+    summary_dic['MAE'] = mae_list
+
     with open("Beta_{}_k_{}_summary_dic.json".format(params.beta,params.latent_k), "w") as json_file:
         json.dump(summary_dic, json_file)
-    '''
-    
+
 
     outputs.a_m = bpm_MatrixFactorization.a_m
     outputs.b_m = bpm_MatrixFactorization.b_m
